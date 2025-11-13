@@ -1,0 +1,193 @@
+name: Streamlined Build with cloud-init
+
+on:
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    name: Check New Version
+    outputs:
+      versions: ${{ steps.needs-versions.outputs.result }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Get RouterOS "stable" version
+        id: get-stable
+        run: |
+          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable | awk 'FS=" " {print $1}'`
+          echo version=$ROSVER >> $GITHUB_OUTPUT
+          echo $ROSVER
+      - name: Get RouterOS "testing" version
+        id: get-testing
+        run: |
+          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.testing | awk 'FS=" " {print $1}'`
+          echo version=$ROSVER >> $GITHUB_OUTPUT    
+          echo $ROSVER
+      - name: Check "stable" channel is release
+        id: has-stable
+        uses: insightsengineering/release-existence-action@v1.0.0
+        with:
+          release-tag: ${{ steps.get-stable.outputs.version }}
+      - name: Check "testing" channel is release
+        id: has-testing
+        uses: insightsengineering/release-existence-action@v1.0.0
+        with:
+          release-tag: ${{ steps.get-testing.outputs.version }}
+      - name: Build Versions for Build "Matrix"
+        id: needs-versions
+        uses: actions/github-script@v6
+        with:
+          result-encoding: json
+          script: |
+            var versions = []
+            if (!${{ steps.has-stable.outputs.release-exists }}) {
+              versions.push("${{ steps.get-stable.outputs.version }}")
+            }
+            if (!${{ steps.has-testing.outputs.release-exists }}) {
+              versions.push("${{ steps.get-testing.outputs.version }}")
+            }
+            console.log(versions)
+            return versions
+      - name: Log Results
+        run: |
+          echo '${{ steps.needs-versions.outputs.result }}'
+          echo '${{ fromJSON(steps.needs-versions.outputs.result)[0] != null }}'
+  build:
+    needs: check
+    permissions:
+      contents: write
+
+    name: Build Image
+
+    runs-on: ubuntu-latest
+    
+    if: ${{ fromJSON(needs.check.outputs.versions)[0] != null }}
+
+    strategy:
+      matrix:
+        version: ${{ fromJSON(needs.check.outputs.versions) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt update
+          sudo -E apt -y install curl qemu-utils rsync unzip zip
+          #sudo -E apt -y install incus-tools
+
+      - name: Load nbd module
+        run: |
+          sudo -E modprobe nbd
+
+      - name: Download
+        run: |
+          curl -skL --retry 3 --connect-timeout 3 -o chr.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}.img.zip
+          unzip chr.*.zip
+          rm -rf chr.*.zip
+
+      - name: Convert to qcow2
+        run: |
+          qemu-img convert -f raw -O qcow2 chr-*.img chr.qcow2
+          cp -af chr.qcow2 chr-efi.qcow2
+          rm -rf chr-*.img
+
+      - name: Connect ndb
+        run: |
+          sudo -E qemu-nbd -c /dev/nbd0 chr.qcow2
+          sudo -E qemu-nbd -c /dev/nbd1 chr-efi.qcow2
+
+      - name: Format boot partition
+        run: |
+          sudo -E mkfs -t fat /dev/nbd1p1
+
+      - name: Create tmp dir
+        run: |
+          sudo -E rm -rf /tmp/chr*
+          sudo -E mkdir /tmp/chr-bios/
+          sudo -E mkdir /tmp/chr-efi/
+          sudo -E mkdir /tmp/chr-efi-config/
+
+      - name: Mount
+        run: |
+          sudo -E mount /dev/nbd0p1 /tmp/chr-bios/
+          sudo -E mount /dev/nbd1p1 /tmp/chr-efi/
+          sudo -E mount /dev/nbd1p2 /tmp/chr-efi-config/
+
+      - name: Sync files
+        run: |
+          sudo -E rsync -a /tmp/chr-bios/ /tmp/chr-efi/
+      
+      - name: Setup cloud-init
+        run: |
+          ls -lh /tmp/chr-efi-config/
+          sudo rm -rf /tmp/chr-efi-config/SHOW_LICENSE
+          sudo echo ':log warning START_CLOUD-INIT' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':delay 5' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning METADATA' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':local metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IDENTITY' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/system identity set name=[:pick $metadata 13 [:find $metadata "\n"]]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IMPORT_USER' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/vendor-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IMPORT_VENDOR' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/user-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo cat /tmp/chr-efi-config/rw/autorun.scr
+
+      - name: Umount
+        run: |
+          sudo -E umount /dev/nbd0p1
+          sudo -E umount /dev/nbd1p1
+          sudo -E umount /dev/nbd1p2
+
+      - name: remove tmp dir
+        run: |
+          sudo -E rm -rf /tmp/chr*
+
+      - name: Disconnect ndb
+        run: |
+          sudo -E qemu-nbd -d /dev/nbd0
+          sudo -E qemu-nbd -d /dev/nbd1
+
+      - name: Remove old
+        run: |
+          rm -rf chr.qcow2
+
+      - name: Convert images
+        run: |
+          mkdir -p ./Firmware/
+          cp -f chr-efi.qcow2 ./Firmware/
+          #qemu-img convert -f qcow2 -O vmdk chr-efi.qcow2 ./Firmware/chr-efi.vmdk
+          #qemu-img convert -f qcow2 -O vpc chr-efi.qcow2 ./Firmware/chr-efi.vhd
+          #qemu-img convert -f qcow2 -O vhdx chr-efi.qcow2 ./Firmware/chr-efi.vhdx
+          #qemu-img convert -f qcow2 -O vdi chr-efi.qcow2 ./Firmware/chr-efi.vdi
+          qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
+          ls -l ./Firmware
+
+      - name: Zip images
+        run: |
+          cd ./Firmware/
+          #zip chr-${{matrix.version}}.qcow2.zip chr-efi.qcow2
+          #zip chr-${{matrix.version}}.vmdk.zip chr-efi.vmdk
+          #zip chr-${{matrix.version}}.vhd.zip chr-efi.vhd
+          #zip chr-${{matrix.version}}.vhdx.zip chr-efi.vhdx
+          #zip chr-${{matrix.version}}.vdi.zip chr-efi.vdi
+          #zip chr-${{matrix.version}}.img.zip chr-efi.img
+          ls -l ./
+
+      - name: Upload Firmware to release
+        uses: ncipollo/release-action@v1
+        with:
+          name: ${{matrix.version}}
+          allowUpdates: true
+          removeArtifacts: true
+          tag: ${{matrix.version}}
+          commit: main
+          token:  ${{ secrets.GITHUB_TOKEN }}
+          artifacts: ./Firmware/*.img
