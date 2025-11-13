@@ -20,9 +20,9 @@ jobs:
           ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable | awk 'FS=" " {print $1}'`
           echo version=$ROSVER >> $GITHUB_OUTPUT
           echo $ROSVER
-      - name: Get RouterOS "testing" version
-        id: get-testing
-        run: |
+      #- name: Get RouterOS "testing" version
+        #id: get-testing
+        #run: |
           #ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.testing | awk 'FS=" " {print $1}'`
           #echo version=$ROSVER >> $GITHUB_OUTPUT    
           #echo $ROSVER
@@ -31,11 +31,11 @@ jobs:
         uses: insightsengineering/release-existence-action@v1.0.0
         with:
           release-tag: ${{ steps.get-stable.outputs.version }}
-      - name: Check "testing" channel is release
-        id: has-testing
-        uses: insightsengineering/release-existence-action@v1.0.0
-        with:
-          release-tag: ${{ steps.get-testing.outputs.version }}
+      #- name: Check "testing" channel is release
+        #id: has-testing
+        #uses: insightsengineering/release-existence-action@v1.0.0
+        #with:
+          #release-tag: ${{ steps.get-testing.outputs.version }}
       - name: Build Versions for Build "Matrix"
         id: needs-versions
         uses: actions/github-script@v6
@@ -46,9 +46,9 @@ jobs:
             if (!${{ steps.has-stable.outputs.release-exists }}) {
               versions.push("${{ steps.get-stable.outputs.version }}")
             }
-            if (!${{ steps.has-testing.outputs.release-exists }}) {
-              versions.push("${{ steps.get-testing.outputs.version }}")
-            }
+            #if (!${{ steps.has-testing.outputs.release-exists }}) {
+              #versions.push("${{ steps.get-testing.outputs.version }}")
+            #}
             console.log(versions)
             return versions
       - name: Log Results
@@ -79,7 +79,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt update
-          sudo -E apt -y install curl qemu-utils rsync unzip zip
+          sudo -E apt -y install curl qemu-utils rsync unzip zip gdisk
           #sudo -E apt -y install incus-tools
 
       - name: Load nbd module
@@ -149,6 +149,26 @@ jobs:
       - name: remove tmp dir
         run: |
           sudo -E rm -rf /tmp/chr*
+    
+      - name: fix partition table
+        run: |
+          (
+          echo 2 # use GPT
+          echo t # change partition code
+          echo 1 # select first partition
+          echo 8300 # change code to Linux filesystem 8300
+          echo r # Recovery/transformation
+          echo h # Hybrid MBR
+          echo 1 2 # partitions added to the hybrid MBR
+          echo n # Place EFI GPT (0xEE) partition first in MBR (good for GRUB)? (Y/N)
+          echo   # Enter an MBR hex code (default 83)
+          echo y # Set the bootable flag? (Y/N)
+          echo   # Enter an MBR hex code (default 83)
+          echo n # Set the bootable flag? (Y/N)
+          echo n # Unused partition space(s) found. Use one to protect more partitions? (Y/N)
+          echo w # write changes to disk
+          echo y # confirm
+          ) | sudo gdisk /dev/ndb1
 
       - name: Disconnect ndb
         run: |
