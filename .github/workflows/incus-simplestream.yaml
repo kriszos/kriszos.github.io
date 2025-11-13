@@ -130,14 +130,14 @@ jobs:
           sudo rm -rf /tmp/chr-efi-config/SHOW_LICENSE
           sudo echo ':log warning START_CLOUD-INIT' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo ':delay 5' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
-          sudo echo ':log warning METADATA' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
-          sudo echo ':local metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
-          sudo echo ':log warning IDENTITY' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
-          sudo echo '/system identity set name=[:pick $metadata 13 [:find $metadata "\n"]]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo ':log warning IMPORT_USER' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/vendor-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo ':log warning IMPORT_VENDOR' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/user-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning METADATA' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':global metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IDENTITY' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/system identity set name=[:pick $metadata 13 [:find $metadata "\n"]]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo cat /tmp/chr-efi-config/rw/autorun.scr
 
       - name: Umount
@@ -167,7 +167,7 @@ jobs:
           #qemu-img convert -f qcow2 -O vpc chr-efi.qcow2 ./Firmware/chr-efi.vhd
           #qemu-img convert -f qcow2 -O vhdx chr-efi.qcow2 ./Firmware/chr-efi.vhdx
           #qemu-img convert -f qcow2 -O vdi chr-efi.qcow2 ./Firmware/chr-efi.vdi
-          qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
+          #qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
           ls -l ./Firmware
 
       - name: Zip images
@@ -190,4 +190,4 @@ jobs:
           tag: ${{matrix.version}}
           commit: main
           token:  ${{ secrets.GITHUB_TOKEN }}
-          artifacts: ./Firmware/*.img
+          artifacts: ./Firmware/*
