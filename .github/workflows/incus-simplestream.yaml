@@ -168,7 +168,7 @@ jobs:
           echo n # Unused partition space(s) found. Use one to protect more partitions? (Y/N)
           echo w # write changes to disk
           echo y # confirm
-          ) | sudo gdisk /dev/ndb1
+          ) | sudo gdisk /dev/nbd1
 
       - name: Disconnect ndb
         run: |
