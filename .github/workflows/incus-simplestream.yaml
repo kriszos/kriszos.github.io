@@ -23,9 +23,9 @@ jobs:
       - name: Get RouterOS "testing" version
         id: get-testing
         run: |
-          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.testing | awk 'FS=" " {print $1}'`
-          echo version=$ROSVER >> $GITHUB_OUTPUT    
-          echo $ROSVER
+          #ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.testing | awk 'FS=" " {print $1}'`
+          #echo version=$ROSVER >> $GITHUB_OUTPUT    
+          #echo $ROSVER
       - name: Check "stable" channel is release
         id: has-stable
         uses: insightsengineering/release-existence-action@v1.0.0
@@ -167,7 +167,7 @@ jobs:
           #qemu-img convert -f qcow2 -O vpc chr-efi.qcow2 ./Firmware/chr-efi.vhd
           #qemu-img convert -f qcow2 -O vhdx chr-efi.qcow2 ./Firmware/chr-efi.vhdx
           #qemu-img convert -f qcow2 -O vdi chr-efi.qcow2 ./Firmware/chr-efi.vdi
-          #qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
+          qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
           ls -l ./Firmware
 
       - name: Zip images
