@@ -3,7 +3,7 @@ name: Streamlined Build with cloud-init
 on:
   workflow_dispatch:
   schedule:
-    - cron: "5 42 * * *"
+    - cron: "0 0 * * *"
 
 permissions: write-all
 
