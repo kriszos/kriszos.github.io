@@ -79,8 +79,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt update
-          sudo -E apt -y install curl qemu-utils rsync unzip zip gdisk
-          #sudo -E apt -y install incus-tools
+          sudo -E apt -y install curl qemu-utils rsync unzip zip gdisk incus-tools
 
       - name: Load nbd module
         run: |
@@ -135,10 +134,9 @@ jobs:
           sudo echo ':log warning IMPORT_VENDOR' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/user-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo ':log warning METADATA' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
-          sudo echo ':global metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':global metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo ':log warning IDENTITY' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo '/system identity set name=[:pick $metadata 13 [:find $metadata "\n"]]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
-          sudo cat /tmp/chr-efi-config/rw/autorun.scr
 
       - name: Umount
         run: |
@@ -187,7 +185,7 @@ jobs:
           #qemu-img convert -f qcow2 -O vpc chr-efi.qcow2 ./Firmware/chr-efi.vhd
           #qemu-img convert -f qcow2 -O vhdx chr-efi.qcow2 ./Firmware/chr-efi.vhdx
           #qemu-img convert -f qcow2 -O vdi chr-efi.qcow2 ./Firmware/chr-efi.vdi
-          qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
+          #qemu-img convert -f qcow2 -O raw chr-efi.qcow2 ./Firmware/chr-efi.img
           ls -l ./Firmware
 
       - name: Zip images
