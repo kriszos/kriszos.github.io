@@ -1,64 +1,12 @@
-name: Streamlined Build with cloud-init
+name: Specific-version
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
 
 permissions: write-all
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    name: Check New Version
-    outputs:
-      versions: ${{ steps.needs-versions.outputs.result }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Get RouterOS "stable" version
-        id: get-stable
-        run: |
-          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable | awk 'FS=" " {print $1}'`
-          echo version=$ROSVER >> $GITHUB_OUTPUT
-          echo $ROSVER
-      - name: Get RouterOS "testing" version
-        id: get-testing
-        run: |
-          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.testing | awk 'FS=" " {print $1}'`
-          echo version=$ROSVER >> $GITHUB_OUTPUT    
-          echo $ROSVER
-      - name: Check "stable" channel is release
-        id: has-stable
-        uses: insightsengineering/release-existence-action@v1.0.0
-        with:
-          release-tag: ${{ steps.get-stable.outputs.version }}
-      - name: Check "testing" channel is release
-        id: has-testing
-        uses: insightsengineering/release-existence-action@v1.0.0
-        with:
-          release-tag: ${{ steps.get-testing.outputs.version }}
-      - name: Build Versions for Build "Matrix"
-        id: needs-versions
-        uses: actions/github-script@v6
-        with:
-          result-encoding: json
-          script: |
-            var versions = []
-            if (!${{ steps.has-stable.outputs.release-exists }}) {
-              versions.push("${{ steps.get-stable.outputs.version }}")
-            }
-            if (!${{ steps.has-testing.outputs.release-exists }}) {
-              versions.push("${{ steps.get-testing.outputs.version }}")
-            }
-            console.log(versions)
-            return versions
-      - name: Log Results
-        run: |
-          echo '${{ steps.needs-versions.outputs.result }}'
-          echo '${{ fromJSON(steps.needs-versions.outputs.result)[0] != null }}'
   build:
-    needs: check
     permissions:
       contents: write
 
@@ -66,11 +14,10 @@ jobs:
 
     runs-on: ubuntu-latest
     
-    if: ${{ fromJSON(needs.check.outputs.versions)[0] != null }}
-
     strategy:
       matrix:
-        version: ${{ fromJSON(needs.check.outputs.versions) }}
+        version:
+          - 7.20.4
 
     steps:
       - name: Checkout
@@ -244,7 +191,6 @@ jobs:
           commit_message: ${{matrix.version}} build
   publish:
     needs:
-      - check
       - build
     permissions:
       contents: read
@@ -252,7 +198,6 @@ jobs:
       id-token: write
     name: Publish to Github Pages
     runs-on: ubuntu-latest  
-    if: ${{ fromJSON(needs.check.outputs.versions)[0] != null }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
