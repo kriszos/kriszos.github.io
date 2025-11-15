@@ -189,8 +189,8 @@ jobs:
       - name: Make simplestream
         run: |
           #testing
-          rm -rf images
-          rm -rf streams
+          #rm -rf images
+          #rm -rf streams
           (
           echo chr
           echo ${{matrix.version}}
