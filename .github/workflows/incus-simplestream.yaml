@@ -91,7 +91,8 @@ jobs:
         run: |
           curl -skL --retry 3 --connect-timeout 3 -o chr.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}.img.zip
           curl -skL --retry 3 --connect-timeout 3 -o chr-arm64.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}-arm64.img.zip
-          unzip chr.*.zip
+          unzip chr.img.zip
+          unzip chr-arm64.img.zip
           rm -rf chr.*.zip
 
       - name: Convert to qcow2
