@@ -70,7 +70,8 @@ jobs:
 
     strategy:
       matrix:
-        version: ${{ fromJSON(needs.check.outputs.versions) }}
+        #version: ${{ fromJSON(needs.check.outputs.versions) }}
+        version: "7.18.2"
 
     steps:
       - name: Checkout
@@ -93,7 +94,7 @@ jobs:
           curl -skL --retry 3 --connect-timeout 3 -o chr-arm64.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}-arm64.img.zip
           unzip chr.img.zip
           unzip chr-arm64.img.zip
-          rm -rf chr.*.zip
+          rm -rf chr*.zip
 
       - name: Convert to qcow2
         run: |
