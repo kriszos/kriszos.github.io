@@ -19,7 +19,7 @@ jobs:
       - name: Get RouterOS "stable" version
         id: get-stable
         run: |
-          ROSVER=`curl -s | awk 'FS=" " {print $1}'`
+          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable | awk 'FS=" " {print $1}'`
           echo version=$ROSVER >> $GITHUB_OUTPUT
           echo $ROSVER
       - name: Get RouterOS "testing" version
