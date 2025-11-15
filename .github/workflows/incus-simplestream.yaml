@@ -19,7 +19,7 @@ jobs:
       - name: Get RouterOS "stable" version
         id: get-stable
         run: |
-          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable | awk 'FS=" " {print $1}'`
+          ROSVER=`curl -s | awk 'FS=" " {print $1}'`
           echo version=$ROSVER >> $GITHUB_OUTPUT
           echo $ROSVER
       - name: Get RouterOS "testing" version
@@ -90,12 +90,14 @@ jobs:
       - name: Download
         run: |
           curl -skL --retry 3 --connect-timeout 3 -o chr.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}.img.zip
+          curl -skL --retry 3 --connect-timeout 3 -o chr-arm64.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}-arm64.img.zip
           unzip chr.*.zip
           rm -rf chr.*.zip
 
       - name: Convert to qcow2
         run: |
-          qemu-img convert -f raw -O qcow2 chr-*.img chr.qcow2
+          qemu-img convert -f raw -O qcow2 chr-${{matrix.version}}.img chr.qcow2
+          qemu-img convert -f raw -O qcow2 chr-${{matrix.version}}-arm64.img chr-arm64.qcow2
           cp -af chr.qcow2 chr-efi.qcow2
           rm -rf chr-*.img
 
@@ -103,6 +105,7 @@ jobs:
         run: |
           sudo -E qemu-nbd -c /dev/nbd0 chr.qcow2
           sudo -E qemu-nbd -c /dev/nbd1 chr-efi.qcow2
+          sudo -E qemu-nbd -c /dev/nbd2 chr-arm64.qcow2
 
       - name: Format boot partition
         run: |
@@ -114,12 +117,14 @@ jobs:
           sudo -E mkdir /tmp/chr-bios/
           sudo -E mkdir /tmp/chr-efi/
           sudo -E mkdir /tmp/chr-efi-config/
+          sudo -E mkdir /tmp/chr-arm64-config/
 
       - name: Mount
         run: |
           sudo -E mount /dev/nbd0p1 /tmp/chr-bios/
           sudo -E mount /dev/nbd1p1 /tmp/chr-efi/
           sudo -E mount /dev/nbd1p2 /tmp/chr-efi-config/
+          sudo -E mount /dev/nbd2p2 /tmp/chr-arm64-config/
 
       - name: Sync files
         run: |
@@ -139,12 +144,14 @@ jobs:
           sudo echo ':global metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo ':log warning IDENTITY' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
           sudo echo '/system identity set name=[:pick $metadata 13 [:find $metadata "\n"]]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo cp /tmp/chr-efi-config/rw/autorun.scr /tmp/chr-arm64-config/rw/autorun.scr
 
       - name: Umount
         run: |
           sudo -E umount /dev/nbd0p1
           sudo -E umount /dev/nbd1p1
           sudo -E umount /dev/nbd1p2
+          sudo -E umount /dev/nbd2p2
 
       - name: remove tmp dir
         run: |
@@ -185,6 +192,14 @@ jobs:
           echo
           ) | incus-simplestreams generate-metadata cloud.tar.xz
           incus-simplestreams add cloud.tar.xz chr-efi.qcow2
+          (
+          echo chr
+          echo ${{matrix.version}}
+          echo cloud
+          echo arm64
+          echo
+          ) | incus-simplestreams generate-metadata cloud-arm64.tar.xz
+          incus-simplestreams add cloud-arm64.tar.xz chr-arm64.qcow2
 
       - name: Upload Firmware to release
         uses: ncipollo/release-action@v1
@@ -195,7 +210,7 @@ jobs:
           tag: ${{matrix.version}}
           commit: main
           token:  ${{ secrets.GITHUB_TOKEN }}
-          artifacts: ./chr-efi.qcow2
+          artifacts: ./chr-*.qcow2
       
       - name: Remove unnesesery files
         run: |
