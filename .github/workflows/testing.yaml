@@ -188,7 +188,6 @@ jobs:
 
       - name: Make simplestream
         run: |
-          incus-simplestreams list -f csv
           (
           echo chr
           echo ${{matrix.version}}
@@ -205,7 +204,6 @@ jobs:
           echo
           ) | incus-simplestreams generate-metadata ${{matrix.version}}-arm64.tar.xz
           incus-simplestreams add ${{matrix.version}}-arm64.tar.xz chr-arm64.qcow2
-          incus-simplestreams list -f csv
 
       - name: Upload Firmware to release
         uses: ncipollo/release-action@v1
