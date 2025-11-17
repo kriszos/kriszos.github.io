@@ -188,25 +188,22 @@ jobs:
 
       - name: Make simplestream
         run: |
-          #testing
-          #rm -rf images
-          #rm -rf streams
           (
           echo chr
           echo ${{matrix.version}}
           echo cloud
           echo amd64
           echo
-          ) | incus-simplestreams generate-metadata cloud.tar.xz
-          incus-simplestreams add cloud.tar.xz chr-efi.qcow2
+          ) | incus-simplestreams generate-metadata ${{matrix.version}}.tar.xz
+          incus-simplestreams add ${{matrix.version}}.tar.xz chr-efi.qcow2
           (
           echo chr
           echo ${{matrix.version}}
           echo cloud
           echo arm64
           echo
-          ) | incus-simplestreams generate-metadata cloud-arm64.tar.xz
-          incus-simplestreams add cloud-arm64.tar.xz chr-arm64.qcow2
+          ) | incus-simplestreams generate-metadata ${{matrix.version}}-arm64.tar.xz
+          incus-simplestreams add ${{matrix.version}}-arm64.tar.xz chr-arm64.qcow2
 
       - name: Upload Firmware to release
         uses: ncipollo/release-action@v1
