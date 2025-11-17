@@ -3,7 +3,7 @@ name: testing
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 2 * * *"
 
 permissions: write-all
 
@@ -47,6 +47,8 @@ jobs:
     needs: check
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     name: Build Image
 
@@ -225,24 +227,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: ${{matrix.version}} build
-  publish:
-    needs:
-      - check
-      - build
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    name: Publish to Github Pages
-    runs-on: ubuntu-latest  
-    if: ${{ fromJSON(needs.check.outputs.versions)[0] != null }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-    
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
     
