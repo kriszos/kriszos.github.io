@@ -188,7 +188,7 @@ jobs:
 
       - name: Make simplestream
         run: |
-          incus-simplestreams list -f csv
+          #incus-simplestreams list -f csv
           (
           echo chr
           echo ${{matrix.version}}
