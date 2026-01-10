@@ -1,0 +1,242 @@
+name: long-term
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+permissions: write-all
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    name: Check New Version
+    outputs:
+      versions: ${{ steps.needs-versions.outputs.result }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Get RouterOS "long-term" version
+        id: get-long-term
+        run: |
+          ROSVER=`curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.long-term | awk 'FS=" " {print $1}'`
+          echo version=$ROSVER >> $GITHUB_OUTPUT    
+          echo $ROSVER
+      - name: Check "long-term" channel is release
+        id: has-long-term
+        uses: insightsengineering/release-existence-action@v1.0.0
+        with:
+          release-tag: ${{ steps.get-long-term.outputs.version }}
+      - name: Build Versions for Build "Matrix"
+        id: needs-versions
+        uses: actions/github-script@v6
+        with:
+          result-encoding: json
+          script: |
+            var versions = []
+            if (!${{ steps.has-long-term.outputs.release-exists }}) {
+              versions.push("${{ steps.get-long-term.outputs.version }}")
+            }
+            console.log(versions)
+            return versions
+      - name: Log Results
+        run: |
+          echo '${{ steps.needs-versions.outputs.result }}'
+          echo '${{ fromJSON(steps.needs-versions.outputs.result)[0] != null }}'
+  build:
+    needs: check
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    name: Build Image
+
+    runs-on: ubuntu-latest
+    
+    if: ${{ fromJSON(needs.check.outputs.versions)[0] != null }}
+
+    strategy:
+      matrix:
+        version: ${{ fromJSON(needs.check.outputs.versions) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt update
+          sudo -E apt -y install curl qemu-utils rsync unzip zip gdisk incus-tools
+
+      - name: Load nbd module
+        run: |
+          sudo -E modprobe nbd
+
+      - name: Download
+        run: |
+          curl -skL --retry 3 --connect-timeout 3 -o chr.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}.img.zip
+          curl -skL --retry 3 --connect-timeout 3 -o chr-arm64.img.zip https://download.mikrotik.com/routeros/${{matrix.version}}/chr-${{matrix.version}}-arm64.img.zip
+          unzip chr.img.zip
+          unzip chr-arm64.img.zip
+          rm -rf chr*.zip
+
+      - name: Convert to qcow2
+        run: |
+          qemu-img convert -f raw -O qcow2 chr-${{matrix.version}}.img chr.qcow2
+          qemu-img convert -f raw -O qcow2 chr-${{matrix.version}}-arm64.img chr-arm64.qcow2
+          cp -af chr.qcow2 chr-efi.qcow2
+          rm -rf chr-*.img
+
+      - name: Connect ndb
+        run: |
+          sudo -E qemu-nbd -c /dev/nbd0 chr.qcow2
+          sudo -E qemu-nbd -c /dev/nbd1 chr-efi.qcow2
+          sudo -E qemu-nbd -c /dev/nbd2 chr-arm64.qcow2
+
+      - name: Format boot partition
+        run: |
+          sudo -E mkfs -t fat /dev/nbd1p1
+
+      - name: Create tmp dir
+        run: |
+          sudo -E rm -rf /tmp/chr*
+          sudo -E mkdir /tmp/chr-bios/
+          sudo -E mkdir /tmp/chr-efi/
+          sudo -E mkdir /tmp/chr-efi-config/
+          sudo -E mkdir /tmp/chr-arm64-config/
+
+      - name: Mount
+        run: |
+          sudo -E mount /dev/nbd0p1 /tmp/chr-bios/
+          sudo -E mount /dev/nbd1p1 /tmp/chr-efi/
+          sudo -E mount /dev/nbd1p2 /tmp/chr-efi-config/
+          sudo -E mount /dev/nbd2p2 /tmp/chr-arm64-config/
+
+      - name: Sync files
+        run: |
+          sudo -E rsync -a /tmp/chr-bios/ /tmp/chr-efi/
+      
+      - name: Setup cloud-init
+        run: |
+          ls -lh /tmp/chr-efi-config/
+          sudo rm -rf /tmp/chr-efi-config/SHOW_LICENSE
+          sudo echo ':log warning START_CLOUD-INIT' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':delay 5' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IMPORT_USER' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/vendor-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IMPORT_VENDOR' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/import file-name=[([:pick [/file print detail as-value where name~"^.*/user-data\$"] 0]->"name")]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning METADATA' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':global metadata ([:pick [/file print detail as-value where name~"^.*/meta-data\$"] 0]->"contents")' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo ':log warning IDENTITY' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo echo '/system identity set name=[:pick $metadata 13 [:find $metadata "\n"]]' | sudo tee -a /tmp/chr-efi-config/rw/autorun.scr
+          sudo cp /tmp/chr-efi-config/rw/autorun.scr /tmp/chr-arm64-config/rw/autorun.scr
+
+      - name: Umount
+        run: |
+          sudo -E umount /dev/nbd0p1
+          sudo -E umount /dev/nbd1p1
+          sudo -E umount /dev/nbd1p2
+          sudo -E umount /dev/nbd2p2
+
+      - name: remove tmp dir
+        run: |
+          sudo -E rm -rf /tmp/chr*
+    
+      - name: fix partition table
+        run: |
+          (
+          echo 2 # use GPT
+          echo t # change partition code
+          echo 1 # select first partition
+          echo 8300 # change code to Linux filesystem 8300
+          echo r # Recovery/transformation
+          echo h # Hybrid MBR
+          echo 1 2 # partitions added to the hybrid MBR
+          echo n # Place EFI GPT (0xEE) partition first in MBR (good for GRUB)? (Y/N)
+          echo   # Enter an MBR hex code (default 83)
+          echo y # Set the bootable flag? (Y/N)
+          echo   # Enter an MBR hex code (default 83)
+          echo n # Set the bootable flag? (Y/N)
+          echo n # Unused partition space(s) found. Use one to protect more partitions? (Y/N)
+          echo w # write changes to disk
+          echo y # confirm
+          ) | sudo gdisk /dev/nbd1
+          (
+          echo 2 # use GPT
+          echo t # change partition code
+          echo 1 # select first partition
+          echo 8300 # change code to Linux filesystem 8300
+          echo r # Recovery/transformation
+          echo h # Hybrid MBR
+          echo 1 2 # partitions added to the hybrid MBR
+          echo n # Place EFI GPT (0xEE) partition first in MBR (good for GRUB)? (Y/N)
+          echo   # Enter an MBR hex code (default 83)
+          echo y # Set the bootable flag? (Y/N)
+          echo   # Enter an MBR hex code (default 83)
+          echo n # Set the bootable flag? (Y/N)
+          echo n # Unused partition space(s) found. Use one to protect more partitions? (Y/N)
+          echo w # write changes to disk
+          echo y # confirm
+          ) | sudo gdisk /dev/nbd2
+      - name: Disconnect ndb
+        run: |
+          sudo -E qemu-nbd -d /dev/nbd0
+          sudo -E qemu-nbd -d /dev/nbd1
+          sudo -E qemu-nbd -d /dev/nbd2
+
+      - name: Make simplestream
+        run: |
+          (
+          echo chr
+          echo ${{matrix.version}}
+          echo cloud
+          echo amd64
+          echo
+          ) | incus-simplestreams generate-metadata ${{matrix.version}}.tar.xz
+          incus-simplestreams add ${{matrix.version}}.tar.xz chr-efi.qcow2
+          (
+          echo chr
+          echo ${{matrix.version}}
+          echo cloud
+          echo arm64
+          echo
+          ) | incus-simplestreams generate-metadata ${{matrix.version}}-arm64.tar.xz
+          incus-simplestreams add ${{matrix.version}}-arm64.tar.xz chr-arm64.qcow2
+
+      - name: Upload Firmware to release
+        uses: ncipollo/release-action@v1
+        with:
+          name: ${{matrix.version}}
+          allowUpdates: true
+          removeArtifacts: true
+          tag: ${{matrix.version}}
+          commit: main
+          token:  ${{ secrets.GITHUB_TOKEN }}
+          artifacts: ./chr-*.qcow2
+      
+      - name: Remove unnesesery files
+        run: |
+          rm -rf *.qcow2
+          rm -rf *.tar.xz
+      
+      - name: commit
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: ${{matrix.version}} build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+    
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload entire repository
+          path: '.'
+    
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
