@@ -15,7 +15,7 @@ jobs:
       versions: ${{ steps.needs-versions.outputs.result }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Get RouterOS "long-term" version
         id: get-long-term
         run: |
@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize environment
         env:
